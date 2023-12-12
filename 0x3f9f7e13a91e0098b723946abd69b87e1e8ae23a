@@ -1,0 +1,696 @@
+export interface ExampleConfig {
+  env: Environment
+  rpc: {
+    local: string
+    mainnet: string
+  }
+  wallet: {
+    address: string
+    privateKey: string
+  }
+  tokens: {
+    in: Token
+    amountIn: number
+    out: Token
+    poolFee: number
+  }
+}
+export const CurrentConfig: ExampleConfig = {
+  env: Environment.LOCAL,
+  rpc: {
+    local: 'http://localhost:8545',
+    mainnet: '',
+  },
+  wallet: {
+    address: '0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266',
+    privateKey:
+      '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80',
+  },
+  tokens: {
+    in: WETH_TOKEN,
+    amountIn: 1,
+    out: USDC_TOKEN,
+    poolFee: FeeAmount.MEDIUM,
+  },
+}
+export const CurrentConfig: ExampleConfig = {
+  env: Environment.WALLET_EXTENSION,
+  rpc: {
+    local: 'http://localhost:8545',
+  },
+  wallet: {
+    ...
+  },
+  tokens: {
+    ...
+  },
+}
+async function getPoolInfo() {
+    const [token0, token1, fee, liquidity, slot0] =
+    await Promise.all([
+        poolContract.fee(),
+        poolContract.liquidity(),
+        poolContract.slot0(),
+    ])
+
+    return {
+        fee,
+        liquidity,
+        sqrtPriceX96: slot0[0],
+        tick: slot0[1],
+    } 
+}
+const poolInfo = await getPoolInfo()
+
+const pool = new Pool(
+  CurrentConfig.tokens.in,
+  CurrentConfig.tokens.out,
+  CurrentConfig.tokens.poolFee,
+  poolInfo.sqrtPriceX96.toString(),
+  poolInfo.liquidity.toString(),
+  poolInfo.tick
+)
+- PoolA: USDC/ WETH
+- PoolB: USDT/ WETH
+- PoolC: USDT/ DAI
+
+PoolA -> PoolB -> PoolC
+
+import { Route } from '@uniswap/v3-sdk'
+
+const swapRoute = new Route(
+  [pool],
+  CurrentConfig.tokens.in,
+  CurrentConfig.tokens.out
+)
+const amountOut = await getOutputQuote(swapRoute)
+import { SwapQuoter } from '@uniswap/v3-sdk'
+import { CurrencyAmount, TradeType } from '@uniswap/sdk-core'
+
+const { calldata } = await SwapQuoter.quoteCallParameters(
+  swapRoute,
+  CurrencyAmount.fromRawAmount(
+    CurrentConfig.tokens.in,
+    fromReadableAmount(
+      CurrentConfig.tokens.amountIn,
+      CurrentConfig.tokens.in.decimals
+    )
+  ),
+  TradeType.EXACT_INPUT,
+  {
+    useQuoterV2: true,
+  }
+)
+const quoteCallReturnData = await provider.call({
+  to: QUOTER_CONTRACT_ADDRESS,
+  data: calldata,
+})
+
+return ethers.utils.defaultAbiCoder.decode(['uint256'], quoteCallReturnData)import { Trade } from 'uniswap/v3-sdk'
+import { CurrencyAmount, TradeType } from '@uniswap/sdk-core'
+import JSBI from 'jsbi'
+
+const uncheckedTrade = Trade.createUncheckedTrade({
+  route: swapRoute,
+  inputAmount: CurrencyAmount.fromRawAmount(
+    CurrentConfig.tokens.in,
+    fromReadableAmount(
+      CurrentConfig.tokens.amountIn,
+      CurrentConfig.tokens.in.decimals
+    )
+  ),
+  outputAmount: CurrencyAmount.fromRawAmount(
+    CurrentConfig.tokens.out,
+    JSBI.BigInt(amountOut)
+  ),
+  tradeType: TradeType.EXACT_INPUT,
+})const tokenApproval = await getTokenTransferApproval(CurrentConfig.tokens.in)import { SwapOptions } from '@uniswap/v3-sdk'
+import { Percent } from '@uniswap/sdk-core'
+
+const options: SwapOptions = {
+  slippageTolerance: new Percent(50, 10_000), // 50 bips, or 0.50%
+  deadline: Math.floor(Date.now() / 1000) + 60 * 20, // 20 minutes from the current Unix time
+  recipient: walletAddress,
+}
+import { SwapRouter } from '@uniswap/v3-sdk'
+
+const methodParameters = SwapRouter.swapCallParameters([uncheckedTrade], options)const tx = {
+  data: methodParameters.calldata,
+  to: SWAP_ROUTER_ADDRESS,
+  value: methodParameters.value,
+  from: walletAddress,
+  maxFeePerGas: MAX_FEE_PER_GAS,
+  maxPriorityFeePerGas: MAX_PRIORITY_FEE_PER_GAS,
+}
+
+const res = await wallet.sendTransaction(tx)
+import { Token } from '@uniswap/sdk-core'
+
+interface ExampleConfig {
+  env: Environment
+  rpc: {
+    local: string
+    mainnet: string
+  }
+  wallet: {
+    address: string
+    privateKey: string
+  }
+  tokens: {
+    in: Token
+    amountIn: number
+    out: Token
+  }
+}
+
+export const CurrentConfig: ExampleConfig = {...}
+import { AlphaRouter, ChainId } from '@uniswap/smart-order-router'
+
+const provider = new ethers.providers.JsonRpcProvider(rpcUrl)
+
+const router = new AlphaRouter({
+  chainId: ChainId.MAINNET,
+  provider,
+})import { SwapOptionsSwapRouter02, SwapType } from '@uniswap/smart-order-router'
+import { Percent } from '@uniswap/sdk-core'
+
+const options: SwapOptionsSwapRouter02 = {
+  recipient: CurrentConfig.wallet.address,
+  slippageTolerance: new Percent(50, 10_000),
+  deadline: Math.floor(Date.now() / 1000 + 1800),
+  type: SwapType.SWAP_ROUTER_02,
+}import { CurrencyAmount, TradeType } from '@uniswap/sdk-core'
+
+const rawTokenAmountIn: JSBI = fromReadableAmount(
+      CurrentConfig.currencies.amountIn,
+      CurrentConfig.currencies.in.decimals
+    )
+
+const route = await router.route(
+  CurrencyAmount.fromRawAmount(
+    CurrentConfig.currencies.in,
+    rawTokenAmountIn
+  ),
+  CurrentConfig.currencies.out,
+  TradeType.EXACT_INPUT,
+  options
+)export function fromReadableAmount(amount: number, decimals: number): JSBI {
+  const extraDigits = Math.pow(10, countDecimals(amount))
+  const adjustedAmount = amount * extraDigits
+  return JSBI.divide(
+    JSBI.multiply(
+      JSBI.BigInt(adjustedAmount),
+      JSBI.exponentiate(JSBI.BigInt(10), JSBI.BigInt(decimals))
+    ),
+    JSBI.BigInt(extraDigits)
+  )
+}if (!route || !route.methodParameters) {
+    // Handle failed request
+}import { ethers } from 'ethers'
+...
+
+const wallet = new ethers.Wallet(privateKey, provider)
+const tokenContract = new ethers.Contract(
+    CurrentConfig.tokens.in.address, 
+    ERC20ABI, 
+    wallet
+)
+const tokenApproval = await tokenContract.approve(
+    V3_SWAP_ROUTER_ADDRESS, 
+    ethers.BigNumber.from(rawTokenAmountIn.toString())
+)const txRes = await wallet.sendTransaction({
+  data: route.methodParameters.calldata,
+  to: V3_SWAP_ROUTER_ADDRESS,
+  value: route.methodParameters.value,
+  from: wallet.address,
+  maxFeePerGas: MAX_FEE_PER_GAS,
+  maxPriorityFeePerGas: MAX_PRIORITY_FEE_PER_GAS,
+})import { Pool, Position } from '@uniswap/v3-sdk'
+import JSBI from 'jsbi'
+
+const pool = new Pool(...)
+const tickLower: number = -100
+const tickUpper: number = 200
+const liquidity: JSBI = JSBI.BigInt('1000000000000000000')
+
+const position = new Position({
+    pool,
+    liquidity,
+    tickLower,
+    tickUpper
+})import { BigIntish } from '@uniswap/sdk-core'
+
+const pool = new Pool(...)
+const tickLower: number = -100
+const tickUpper: number = 200
+const amount0: BigIntish = '1000000000000000000'
+const amount1: BigIntish = JSBI.BigInt('1000000000000000000')
+const useFullPrecision: boolean = true
+
+const position = Position.fromAmounts({
+    pool, 
+    tickLower, 
+    tickUpper, 
+    amount0, 
+    amount1, 
+    useFullPrecision
+})import { BigIntish } from '@uniswap/sdk-core'
+...
+
+const pool = new Pool(...)
+const tickLower: number = -200
+const tickUpper: number = 100
+const amount0: BigIntish = '1000000000000000000'
+const useFullPrecision: boolean = true
+
+const singleSidePositionToken0 = Position.fromAmount0({
+    pool, 
+    tickLower, 
+    tickUpper, 
+    amount0,
+    useFullPrecision
+})
+
+const amount1: BigIntish = 100000000
+
+const singleSidePositionToken1 = Position.fromAmount1({
+    pool, 
+    tickLower, 
+    tickUpper, 
+    amount1,
+    useFullPrecision
+})import { MintOptions, NonfungiblePositionManager } from '@uniswap/v3-sdk'
+
+const mintOptions: MintOptions = {
+  recipient: address,
+  deadline: Math.floor(Date.now() / 1000) + 60 * 20,
+  slippageTolerance: new Percent(50, 10_000),
+}
+
+// get calldata for minting a position
+const { calldata, value } = NonfungiblePositionManager.addCallParameters(
+  positionToMint,
+  mintOptions
+)const { calldata, value } = NonfungiblePositionManager.removeCallParameters(
+  currentPosition,
+  removeLiquidityOptions
+)const { calldata, value } =
+  NonfungiblePositionManager.collectCallParameters(collectOptions)const token0Approval = await getTokenTransferApproval(
+  token0Address,
+  amount0
+)
+const token1Approval = await getTokenTransferApproval(
+  token1Address,
+  amount1
+)import { ethers, BigNumber } from 'ethers'
+
+async function getTokenTransferApproval(address: string, amount: BigNumber) {
+    const provider = new ethers.providers.JsonRpcProvider(rpcUrl)
+
+    const tokenContract = new ethers.Contract(
+        token.address,
+        ERC20_ABI,
+        provider
+    )
+
+    return tokenContract.approve(
+        NONFUNGIBLE_POSITION_MANAGER_CONTRACT_ADDRESS,
+        amount
+    )
+}import { computePoolAddress, FeeAmount } from '@uniswap/v3-sdk'
+import { Token } from '@uniswap/sdk-core'
+
+const token0: Token = ...
+const token1: Token = ...
+const fee: FeeAmount = ...
+const POOL_FACTORY_CONTRACT_ADDRESS: string = ...
+
+const currentPoolAddress = computePoolAddress({
+  factoryAddress: POOL_FACTORY_CONTRACT_ADDRESS,
+  tokenA: token0,
+  tokenB: token1,
+  fee: poolFee,
+})import IUniswapV3PoolABI from '@uniswap/v3-core/artifacts/contracts/interfaces/IUniswapV3Pool.sol/IUniswapV3Pool.json'
+
+const poolContract = new ethers.Contract(
+  currentPoolAddress,
+  IUniswapV3PoolABI.abi,
+  provider
+)
+
+const [liquidity, slot0] =
+  await Promise.all([
+    poolContract.liquidity(),
+    poolContract.slot0(),
+  ])import { Pool } from '@uniswap/v3-sdk'
+
+const configuredPool = new Pool(
+  token0,
+  token1,
+  poolFee,
+  slot0.sqrtPriceX96.toString(),
+  liquidity.toString(),
+  slot0.tick
+)import { Position } from '@uniswap/v3-sdk'
+import { BigIntish } from '@uniswap/sdk-core'
+
+// The maximum token amounts we want to provide. BigIntish accepts number, string or JSBI
+const amount0: BigIntish = ...
+const amount1: BigIntish = ...
+
+const position = Position.fromAmounts({
+  pool: configuredPool,
+  tickLower:
+    nearestUsableTick(configuredPool.tickCurrent, configuredPool.tickSpacing) -
+    configuredPool.tickSpacing * 2,
+  tickUpper:
+    nearestUsableTick(configuredPool.tick, configuredPool.tickSpacing) +
+    configuredPool.tickSpacing * 2,
+  amount0: amount0,
+  amount1: amount1,
+  useFullPrecision: true,
+})import { MintOptions, NonfungiblePositionManager } from '@uniswap/v3-sdk'
+import { Percent } from '@uniswap/sdk-core'
+
+const mintOptions: MintOptions = {
+  recipient: address,
+  deadline: Math.floor(Date.now() / 1000) + 60 * 20,
+  slippageTolerance: new Percent(50, 10_000),
+}
+
+// get calldata for minting a position
+const { calldata, value } = NonfungiblePositionManager.addCallParameters(
+  position,
+  mintOptions
+)const transaction = {
+  data: calldata,
+  to: NONFUNGIBLE_POSITION_MANAGER_CONTRACT_ADDRESS,
+  value: value,
+  from: address,
+  maxFeePerGas: MAX_FEE_PER_GAS,
+  maxPriorityFeePerGas: MAX_PRIORITY_FEE_PER_GAS,
+}const wallet = new ethers.Wallet(privateKey, provider)
+
+const txRes = await wallet.sendTransaction(transaction)import { ethers } from 'ethers'
+import INONFUNGIBLE_POSITION_MANAGER from '@uniswap/v3-periphery/artifacts/contracts/NonfungiblePositionManager.sol/NonfungiblePositionManager.json'
+
+const provider = new ethers.providers.JsonRpcProvider(rpcUrl)
+
+const nfpmContract = new ethers.Contract(
+    NONFUNGIBLE_POSITION_MANAGER_CONTRACT_ADDRESS,
+    INONFUNGIBLE_POSITION_MANAGER.abi,
+    provider
+)
+const numPositions = await nfpmContract.balanceOf(address)const calls = []
+
+for (let i = 0; i < numPositions; i++) {
+    calls.push(
+        nfpmContract.tokenOfOwnerByIndex(address, i)
+    )
+}
+
+const positionIds = await Promise.all(calls)function positions(
+    uint256 tokenId
+  ) external view returns (
+    uint96 nonce, 
+    address operator, 
+    address token0, 
+    address token1, 
+    uint24 fee, 
+    int24 tickLower, 
+    int24 tickUpper, 
+    uint128 liquidity, 
+    uint256 feeGrowthInside0LastX128, 
+    uint256 feeGrowthInside1LastX128, 
+    uint128 tokensOwed0, 
+    uint128 tokensOwed1
+    )interface PositionInfo {
+  tickLower: number
+  tickUpper: number
+  liquidity: JSBI
+  feeGrowthInside0LastX128: JSBI
+  feeGrowthInside1LastX128: JSBI
+  tokensOwed0: JSBI
+  tokensOwed1: JSBI
+}const positionCalls = []
+
+for (let id of positionIds) {
+    positionCalls.push(
+        nfpmContract.positions(id)
+    )
+}
+
+const callResponses = await Promise.all(positionCalls)const positionInfos = callResponses.map((position) => {
+    return {
+        tickLower: position.tickLower,
+        tickUpper: position.tickUpper,
+        liquidity: JSBI.BigInt(position.liquidity),
+        feeGrowthInside0LastX128: JSBI.BigInt(position.feeGrowthInside0LastX128),
+        feeGrowthInside1LastX128: JSBI.BigInt(position.feeGrowthInside1LastX128),
+        tokensOwed0: JSBI.BigInt(position.tokensOwed0),
+        tokensOwed1: JSBI.BigInt(position.tokensOwed1),
+  }
+})const positionInfos = callResponses.map((position) => {
+    return {
+        tickLower: position.tickLower,
+        tickUpper: position.tickUpper,
+        liquidity: JSBI.BigInt(position.liquidity),
+        feeGrowthInside0LastX128: JSBI.BigInt(position.feeGrowthInside0LastX128),
+        feeGrowthInside1LastX128: JSBI.BigInt(position.feeGrowthInside1LastX128),
+        tokensOwed0: JSBI.BigInt(position.tokensOwed0),
+        tokensOwed1: JSBI.BigInt(position.tokensOwed1),
+  }
+})
+const numPositions = await nfpmContract.balanceOf(address)const calls = []
+
+for (let i = 0; i < numPositions; i++) {
+    calls.push(
+        nfpmContract.tokenOfOwnerByIndex(address, i)
+    )
+}
+
+const positionIds = await Promise.all(calls)const calls = []
+
+for (let i = 0; i < numPositions; i++) {
+    calls.push(
+        nfpmContract.tokenOfOwnerByIndex(address, i)
+    )
+}
+
+const positionIds = await Promise.all(calls)interface PositionInfo {
+  tickLower: number
+  tickUpper: number
+  liquidity: JSBI
+  feeGrowthInside0LastX128: JSBI
+  feeGrowthInside1LastX128: JSBI
+  tokensOwed0: JSBI
+  tokensOwed1: JSBI
+}const positionCalls = []
+
+for (let id of positionIds) {
+    positionCalls.push(
+        nfpmContract.positions(id)
+    )
+}
+
+const callResponses = await Promise.all(positionCalls)const positionInfos = callResponses.map((position) => {
+    return {
+        tickLower: position.tickLower,
+        tickUpper: position.tickUpper,
+        liquidity: JSBI.BigInt(position.liquidity),
+        feeGrowthInside0LastX128: JSBI.BigInt(position.feeGrowthInside0LastX128),
+        feeGrowthInside1LastX128: JSBI.BigInt(position.feeGrowthInside1LastX128),
+        tokensOwed0: JSBI.BigInt(position.tokensOwed0),
+        tokensOwed1: JSBI.BigInt(position.tokensOwed1),
+  }
+})export const CurrentConfig: ExampleConfig = {
+  env: Environment.LOCAL,
+  rpc: {
+    local: 'http://localhost:8545',
+    mainnet: 'https://mainnet.infura.io/v3/0ac57a06f2994538829c14745750d721',
+  },
+  wallet: {
+    address: '0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266',
+    privateKey:
+      '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80',
+  },
+  tokens: {
+    token0: USDC_TOKEN,
+    token0Amount: 1000,
+    token1: DAI_TOKEN,
+    token1Amount: 1000,
+    poolFee: FeeAmount.LOW,
+    fractionToRemove: 1,
+    fractionToAdd: 0.5,
+  },
+}const fractionToAdd: number = ...
+
+const amount0Increased: JSBI = fromReadableAmount(
+    readableAmount0 * fractionToAdd, 
+    token0.decimals
+)
+const amount1Increase: JSBI = fromReadableAmount(
+    readableAmount1 * fractionToAdd, 
+    token1.decimals
+)
+
+const positionToIncreaseBy = constructPosition(
+    amount0Increased,
+    amount1Increase
+  )
+)import { Pool, Position } from '@uniswap/v3-sdk'
+import JSBI from 'jsbi'
+
+function constructPosition(
+    amount0: JSBI,
+    amount1: JSBI
+): Position {
+    // create Pool same as in the previous guide
+    const pool = new Pool(...)
+
+    // create position using the maximum liquidity from input amounts
+    return Position.fromAmounts({
+        pool,
+        tickLower:
+            nearestUsableTick(pool.tickCurrent, pool.tickSpacing) -
+            pool.tickSpacing * 2,
+        tickUpper:
+            nearestUsableTick(pool.tickCurrent, pool.tickSpacing) +
+            pool.tickSpacing * 2,
+        amount0,
+        amount1,
+        useFullPrecision: true,
+    })
+}import { AddLiquidityOptions } from '@uniswap/v3-sdk'
+
+const addLiquidityOptions: AddLiquidityOptions = {
+  deadline: Math.floor(Date.now() / 1000) + 60 * 20,
+  slippageTolerance: new Percent(50, 10_000),
+  tokenId,
+}import { NonfungiblePositionManager } from '@uniswap/v3-sdk'
+
+const positionToIncreaseBy = constructPosition(CurrentConfig.tokens.amount0, CurrentConfig.tokens.amount1)
+
+const { calldata, value } = NonfungiblePositionManager.addCallParameters(
+  positionToIncreaseBy,
+  addLiquidityOptions
+)import { ethers } from 'ethers'
+
+const transaction = {
+  data: calldata,
+  to: NONFUNGIBLE_POSITION_MANAGER_CONTRACT_ADDRESS,
+  value: value,
+  from: address,
+  maxFeePerGas: MAX_FEE_PER_GAS,
+  maxPriorityFeePerGas: MAX_PRIORITY_FEE_PER_GAS,
+}
+
+const wallet = new ethers.Wallet(privateKey, provider)
+
+const txRes = await wallet.sendTransaction(transaction)import { ethers } from 'ethers'
+
+const transaction = {
+  data: calldata,
+  to: NONFUNGIBLE_POSITION_MANAGER_CONTRACT_ADDRESS,
+  value: value,
+  from: address,
+  maxFeePerGas: MAX_FEE_PER_GAS,
+  maxPriorityFeePerGas: MAX_PRIORITY_FEE_PER_GAS,
+}
+
+const wallet = new ethers.Wallet(privateKey, provider)
+
+const txRes = await wallet.sendTransaction(transaction)const amount0: JSBI = fromReadableAmount(
+    readableAmount0 * fractionToAdd, 
+    token0.decimals
+)
+const amount1: JSBI = fromReadableAmount(
+    readableAmount1 * fractionToAdd, 
+    token1.decimals
+)
+
+const currentPosition = constructPosition(
+  amount0,
+  amount1
+)import { RemoveLiquidityOptions } from '@uniswap/v3-sdk'
+import { Percent } from '@uniswap/sdk-core'
+
+const removeLiquidityOptions: RemoveLiquidityOptions = {
+  deadline: Math.floor(Date.now() / 1000) + 60 * 20,
+  slippageTolerance: new Percent(50, 10_000),
+  tokenId: positionId,
+  // percentage of liquidity to remove
+  liquidityPercentage: new Percent(0.5),
+  collectOptions,
+}import { CurrencyAmount } from '@uniswap/sdk-core'
+import { CollectOptions } from '@uniswap/v3-sdk'
+
+const collectOptions: Omit<CollectOptions, 'tokenId'> = {
+  expectedCurrencyOwed0: CurrencyAmount.fromRawAmount(
+    token0,
+    0
+  ),
+  expectedCurrencyOwed1: CurrencyAmount.fromRawAmount(
+    token1,
+    0
+  ),
+  recipient: address,
+}const { calldata, value } = NonfungiblePositionManager.removeCallParameters(
+  currentPosition,
+  removeLiquidityOptions
+)const transaction = {
+  data: calldata,
+  to: NONFUNGIBLE_POSITION_MANAGER_CONTRACT_ADDRESS,
+  value: value,
+  from: address,
+  maxFeePerGas: MAX_FEE_PER_GAS,
+  maxPriorityFeePerGas: MAX_PRIORITY_FEE_PER_GAS,
+}
+
+const txRes = await wallet.sendTransaction(transaction)import { ethers } from 'ethers'
+import JSBI from 'jsbi'
+...
+
+const nfpmContract = new ethers.Contract(NONFUNGIBLE_POSITION_MANAGER_ADDRESS, provider)
+const position = nfpmContract.positions(positionId)import { CurrencyAmount } from '@uniswap/sdk-core'
+
+const collectOptions: CollectOptions = {
+  tokenId: positionId,
+  expectedCurrencyOwed0: CurrencyAmount.fromRawAmount(
+    CurrentConfig.tokens.token0,
+    JSBI.BigInt(position.tokensOwed0)
+  ),
+  expectedCurrencyOwed1: CurrencyAmount.fromRawAmount(
+    CurrentConfig.tokens.token1,
+    JSBI.BigInt(position.tokensOwed1)
+  ),
+  recipient: address,
+}const positionInfos = callResponses.map((position) => {
+    return {
+        tickLower: position.tickLower,
+        tickUpper: position.tickUpper,
+        liquidity: JSBI.BigInt(position.liquidity),
+        feeGrowthInside0LastX128: JSBI.BigInt(position.feeGrowthInside0LastX128),
+        feeGrowthInside1LastX128: JSBI.BigInt(position.feeGrowthInside1LastX128),
+        tokensOwed0: JSBI.BigInt(position.tokensOwed0),
+        tokensOwed1: JSBI.BigInt(position.tokensOwed1),
+  }
+})const { calldata, value } =
+  NonfungiblePositionManager.collectCallParameters(collectOptions)const transaction = {
+  data: calldata,
+  to: NONFUNGIBLE_POSITION_MANAGER_CONTRACT_ADDRESS,
+  value: value,
+  from: address,
+  maxFeePerGas: MAX_FEE_PER_GAS,
+  maxPriorityFeePerGas: MAX_PRIORITY_FEE_PER_GAS,
+}
+
+const txRes = await wallet.sendTransaction(transaction)const tokenInApproval = await getTokenTransferApproval(
+  token0,
+  V3_SWAP_ROUTER_ADDRESS
+)
+
+const tokenOutApproval = await getTokenTransferApproval(
+  token1,
+  V3_SWAP_ROUTER_ADDRESS
+)
